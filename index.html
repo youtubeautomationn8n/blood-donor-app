@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!--
+  Content Security Policy: only our own scripts may run (plus Firebase SDKs
+  when the Firebase OTP provider is enabled in js/config.js).
+  All interactivity is bound via addEventListener — no inline handlers.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://www.googleapis.com;">
+<title>Raktdaan — Verified Blood Donors Nearby</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <button class="hbtn hidden" id="backBtn" aria-label="Go back">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+    </button>
+    <div class="logo" id="logoWrap" role="button" tabindex="0" aria-label="Home">
+      <div class="drop"><span>✚</span></div>Raktdaan
+    </div>
+    <div class="htitle hidden" id="hdrTitle"></div>
+    <span class="hbtn hidden" id="spacerBtn" aria-hidden="true"></span>
+  </header>
+
+  <main id="screens">
+    <!-- ================= HOME ================= -->
+    <section class="screen active" id="s-home" data-title="">
+      <div class="hero">
+        <div class="drop" style="margin:0 auto"><span>✚</span></div>
+        <h1>Real donors.<br><em>Verified.</em> Nearby.</h1>
+        <p>India falls short by millions of blood units every year. Raktdaan connects patients with <b>verified</b> donors nearby — no fake profiles, no middlemen, no money involved.</p>
+        <button class="btn btn-primary pulse" id="btnNeedBlood">🩸 I need blood urgently</button>
+        <button class="btn btn-dark" id="btnBecomeDonor">❤️ Become a donor</button>
+        <button class="btn btn-ghost" id="btnTrust">🛡️ How we verify donors</button>
+      </div>
+      <div class="stats">
+        <div class="stat"><b style="color:var(--red)" id="st-donors">–</b><span>registered donors</span></div>
+        <div class="stat"><b style="color:var(--green)" id="st-verified">–</b><span>verified donors</span></div>
+        <div class="stat"><b id="st-requests">–</b><span>requests fulfilled</span></div>
+      </div>
+      <div class="sec-title">Why trust Raktdaan?</div>
+      <div class="card">
+        <div class="trust-row">
+          <div class="trust-ico">🔒</div>
+          <div><b>No public phone numbers</b><p>Donor contact details are revealed only after they accept your request. No harassment, no scams.</p></div>
+        </div>
+        <div class="trust-row">
+          <div class="trust-ico">✅</div>
+          <div><b>3-level verification badges</b><p>🟡 OTP-registered → 🟠 donation proof uploaded → 🟢 verified by a real completed donation.</p></div>
+        </div>
+        <div class="trust-row">
+          <div class="trust-ico">🧠</div>
+          <div><b>Fake-donor detection</b><p>Accounts claiming impossible donation frequencies or suspicious patterns get auto-flagged and blocked.</p></div>
+        </div>
+      </div>
+      <div class="legal">⚠️ <b>Prototype demo</b> with sample data. Never pay for blood — buying or selling blood is <b>illegal in India</b>. Hospitals always re-test donated blood before transfusion.</div>
+    </section>
+
+    <!-- ================= TRUST ================= -->
+    <section class="screen" id="s-trust" data-title="How verification works">
+      <div class="card">
+        <h3>🛡️ Our 5-layer trust system</h3>
+        <p class="muted">No single check is perfect. Stacked together, faking becomes harder than actually donating.</p>
+      </div>
+      <div class="card">
+        <div class="trust-row">
+          <div class="trust-ico">📱</div>
+          <div><b>1 · Phone OTP at signup</b><p>Kills bulk fake accounts instantly. One verified number = one profile. Same approach as India's e-RaktKosh portal.</p></div>
+        </div>
+        <div class="trust-row">
+          <div class="trust-ico">📄</div>
+          <div><b>2 · Donation proof upload</b><p>Real donors get certificates from blood banks &amp; camps. Upload yours → earn the 🟠 badge. Partnerships with Red Cross / Rotary verify at scale.</p></div>
+        </div>
+        <div class="trust-row">
+          <div class="trust-ico">🤝</div>
+          <div><b>3 · Proof through action</b><p>Complete one donation through Raktdaan, confirmed by the recipient or hospital → 🟢 <b>Verified Donor</b>. Impossible to fake without actually donating.</p></div>
+        </div>
+        <div class="trust-row">
+          <div class="trust-ico">🧠</div>
+          <div><b>4 · Logic-based fraud flags</b><p>Whole-blood donors must wait <b>90 days</b> between donations. Claim weekly donations? Auto-flagged. Suspicious accept patterns? Blocked.</p></div>
+        </div>
+        <div class="trust-row">
+          <div class="trust-ico">🔒</div>
+          <div><b>5 · Contact privacy by design</b><p>Phone numbers stay hidden until a donor <b>accepts</b> your request. Removes the motive for harassment and cash-for-blood scams.</p></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>🏅 Badge levels</h3>
+        <p style="margin-top:8px"><span class="badge b-registered">🟡 Registered</span></p>
+        <p class="muted" style="margin:4px 0 10px">OTP-verified phone. Claim not yet proven — shown last in results.</p>
+        <p><span class="badge b-proof">🟠 Proof uploaded</span></p>
+        <p class="muted" style="margin:4px 0 10px">Uploaded a donation certificate from a blood bank or camp.</p>
+        <p><span class="badge b-verified">🟢 Verified donor</span></p>
+        <p class="muted" style="margin:4px 0 2px">Completed a donation through Raktdaan, confirmed by recipient. Shown first, always.</p>
+      </div>
+      <button class="btn btn-primary" id="btnTrustSignup">Become a verified donor ❤️</button>
+    </section>
+
+    <!-- ================= EMERGENCY REQUEST FORM ================= -->
+    <section class="screen" id="s-req-form" data-title="Request blood">
+      <div class="card" style="border-left:4px solid var(--red)">
+        <h3>🚨 Emergency blood request</h3>
+        <p class="muted">Your request goes only to compatible, eligible donors nearby. <b>No donor sees your phone number</b> until they accept.</p>
+      </div>
+      <label class="flabel" id="lblNeedGroup">Blood group needed</label>
+      <div class="grid8" id="needGroups" role="group" aria-labelledby="lblNeedGroup"></div>
+      <label class="flabel">Units needed</label>
+      <div class="row2" style="margin-bottom:4px">
+        <button class="btn btn-ghost btn-sm" style="margin:0" id="btnUnitsMinus" aria-label="Decrease units">−</button>
+        <div class="card" style="flex:1;text-align:center;margin:0;padding:10px;font-size:22px;font-weight:800" id="unitsVal" aria-live="polite">2</div>
+        <button class="btn btn-ghost btn-sm" style="margin:0" id="btnUnitsPlus" aria-label="Increase units">+</button>
+      </div>
+      <label class="flabel">Urgency</label>
+      <div class="urg" id="urgRow">
+        <div class="uchip sel" data-action="pick-urgency" data-id="Critical" role="button" tabindex="0">🔴 Critical</div>
+        <div class="uchip" data-action="pick-urgency" data-id="Urgent" role="button" tabindex="0">🟠 Urgent</div>
+        <div class="uchip" data-action="pick-urgency" data-id="Normal" role="button" tabindex="0">🔵 Normal</div>
+      </div>
+      <label class="flabel" for="f-hospital">Hospital name</label>
+      <input type="text" id="f-hospital" placeholder="e.g. District Hospital, Sehore" maxlength="80" autocomplete="off">
+      <label class="flabel" for="f-patient">Patient name</label>
+      <input type="text" id="f-patient" placeholder="e.g. Ramesh Choursiya" maxlength="60" autocomplete="off">
+      <label class="flabel" for="f-phone">Your phone (for donors to reach you)</label>
+      <input type="tel" id="f-phone" placeholder="10-digit mobile number" maxlength="14" inputmode="numeric" autocomplete="off">
+      <label class="flabel" for="f-note">Note for donors (optional)</label>
+      <textarea id="f-note" placeholder="e.g. Surgery at 6 PM today, any help appreciated" maxlength="300"></textarea>
+      <div style="height:18px"></div>
+      <button class="btn btn-primary" id="btnFindDonors">Find matching donors →</button>
+    </section>
+
+    <!-- ================= MATCHING RESULTS ================= -->
+    <section class="screen" id="s-req-match" data-title="Matching donors">
+      <div class="card" style="border-left:4px solid var(--red)">
+        <h3 id="matchHead">Compatible donors near you</h3>
+        <p class="muted" id="matchSub"></p>
+      </div>
+      <div id="matchList"></div>
+      <div class="note hidden" id="eligNote"></div>
+      <div style="height:14px"></div>
+      <button class="btn btn-primary" id="sendReqBtn">📢 Send request to all matched donors</button>
+      <p class="muted" style="text-align:center;font-size:12.5px">Donors get an instant alert. Your number stays hidden until someone accepts.</p>
+    </section>
+
+    <!-- ================= REQUEST TRACKING ================= -->
+    <section class="screen" id="s-req-track" data-title="Live tracking">
+      <div class="card alert-card">
+        <h3>🚨 Request live</h3>
+        <p class="muted" id="trkSub"></p>
+        <div class="prog"><i id="trkProg" style="width:10%"></i></div>
+      </div>
+      <div class="sec-title">Status</div>
+      <div class="card"><div class="timeline" id="trkTimeline"></div></div>
+      <div class="sec-title">Donor responses</div>
+      <div id="trkAlerts"></div>
+      <div class="legal">🔒 Donor phone numbers appear here <b>only after they accept</b>. Never share OTPs or pay anyone — report suspicious behavior immediately.</div>
+    </section>
+
+    <!-- ================= DONOR SIGNUP ================= -->
+    <section class="screen" id="s-signup" data-title="Become a donor">
+      <div class="stepdots"><i class="on" id="sd1"></i><i id="sd2"></i><i id="sd3"></i></div>
+
+      <div id="su-step1">
+        <div class="card"><h3>👋 Let's get you registered</h3><p class="muted">Takes 2 minutes. Your number is verified by OTP — one person, one profile.</p></div>
+        <label class="flabel" for="su-name">Full name</label>
+        <input type="text" id="su-name" placeholder="e.g. Anant Choursiya" maxlength="60" autocomplete="name">
+        <label class="flabel" for="su-phone">Mobile number</label>
+        <input type="tel" id="su-phone" placeholder="10-digit mobile number" maxlength="14" inputmode="numeric" autocomplete="tel">
+        <label class="flabel" for="su-city">City</label>
+        <input type="text" id="su-city" placeholder="e.g. Ashta" maxlength="60" autocomplete="off">
+        <div style="height:18px"></div>
+        <button class="btn btn-primary" id="btnSendOtp">Send OTP →</button>
+      </div>
+
+      <div id="su-step2" style="display:none">
+        <div class="card"><h3>📱 Verify your number</h3><p class="muted" id="otpSentTo"></p></div>
+        <div class="demo-otp hidden" id="demoOtpWrap">🧪 <b>Demo mode</b> — no real SMS is sent.<br>Your OTP is: <b id="demoOtpCode">••••••</b></div>
+        <label class="flabel" for="su-otp">Enter 6-digit OTP</label>
+        <input type="tel" class="otp-input" id="su-otp" maxlength="6" placeholder="••••••" inputmode="numeric" autocomplete="one-time-code">
+        <div style="height:18px"></div>
+        <button class="btn btn-primary" id="btnVerifyOtp">Verify →</button>
+        <button class="btn btn-ghost" id="btnResendOtp">Resend OTP</button>
+        <div id="recaptcha-container"></div>
+      </div>
+
+      <div id="su-step3" style="display:none">
+        <div class="card"><h3>🩸 Your donor profile</h3><p class="muted">This is what requesters will see (never your phone number).</p></div>
+        <label class="flabel" id="lblMyGroup">Your blood group</label>
+        <div class="grid8" id="myGroups" role="group" aria-labelledby="lblMyGroup"></div>
+        <label class="flabel" for="su-lastdon">Last donation date <span class="muted" style="font-weight:400">(leave blank if never donated)</span></label>
+        <input type="date" id="su-lastdon" max="2026-10-08">
+        <label class="flabel" for="su-proof">Donation proof <span class="muted" style="font-weight:400">(certificate from a blood bank/camp → 🟠 badge)</span></label>
+        <input type="file" id="su-proof" accept="image/*,.pdf" style="padding:12px">
+        <label class="check"><input type="checkbox" id="su-age"><span>I am 18+ years old and weigh at least 50 kg (basic eligibility)</span></label>
+        <div style="height:18px"></div>
+        <button class="btn btn-primary" id="btnFinishSignup">Complete registration ❤️</button>
+      </div>
+    </section>
+
+    <!-- ================= DONOR DASHBOARD ================= -->
+    <section class="screen" id="s-dash" data-title="My donor profile">
+      <div class="card">
+        <div class="donor">
+          <div class="avatar" id="dashAvatar">?</div>
+          <div class="info">
+            <b id="dashName">—</b>
+            <div class="meta" id="dashMeta">—</div>
+            <span id="dashBadge"></span>
+          </div>
+          <div class="toggle on" id="availToggle" data-action="toggle-avail" role="switch" aria-checked="true" tabindex="0" aria-label="Availability"></div>
+        </div>
+        <p class="muted" style="margin-top:10px" id="availLabel"></p>
+      </div>
+      <div class="stats">
+        <div class="stat"><b style="color:var(--red)" id="dashDonations">0</b><span>donations</span></div>
+        <div class="stat"><b style="color:var(--green)" id="dashEligible">—</b><span>next eligible</span></div>
+        <div class="stat"><b id="dashLives">0</b><span>lives touched*</span></div>
+      </div>
+      <div class="sec-title">🏅 Badges</div>
+      <div class="card"><div id="dashBadges" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <p class="muted" style="margin-top:10px;font-size:12.5px">*Each donation can help up to 3 patients. Complete a donation through Raktdaan to earn 🟢 Verified.</p>
+      </div>
+      <div class="sec-title">📥 Incoming requests</div>
+      <div id="dashInbox"></div>
+      <div class="sec-title">📜 Donation history</div>
+      <div id="dashHistory"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div><!-- /app -->
+
+<script src="js/config.js"></script>
+<script src="js/security.js"></script>
+<script src="js/data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/otp.js"></script>
+<script src="js/request.js"></script>
+<script src="js/donor.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
