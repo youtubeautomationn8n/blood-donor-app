@@ -75,8 +75,24 @@ const UI = (() => {
     });
   }
 
+  /* Best-effort geolocation. Never rejects — resolves null on
+     denial/timeout so flows never block waiting for permission. */
+  function getPosition(timeoutMs = 7000) {
+    return new Promise(resolve => {
+      if (!navigator.geolocation) return resolve(null);
+      let done = false;
+      const finish = v => { if (!done) { done = true; resolve(v); } };
+      setTimeout(() => finish(null), timeoutMs + 500);
+      navigator.geolocation.getCurrentPosition(
+        p => finish({ lat: p.coords.latitude, lng: p.coords.longitude }),
+        () => finish(null),
+        { timeout: timeoutMs, maximumAge: 600000 }
+      );
+    });
+  }
+
   return {
     $, toast, badgePill, go, goBack, renderHome,
-    registerAction, initDispatcher
+    registerAction, initDispatcher, getPosition
   };
 })();

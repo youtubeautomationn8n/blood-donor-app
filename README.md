@@ -10,15 +10,17 @@ blood-donor-app/
 ├── index.html            # markup only — zero inline JS (CSP-safe)
 ├── css/
 │   └── styles.css        # full design system, mobile-first
+├── firestore.rules        # Firestore security rules (phone privacy, anti-abuse)
 ├── js/
-│   ├── config.js         # ONE place for all settings (incl. OTP provider switch)
+│   ├── config.js         # ONE place for all settings (OTP + backend switches)
 │   ├── security.js       # XSS escaping, input validation, rate limiting
 │   ├── data.js           # blood-group compatibility, seed demo data
-│   ├── store.js          # state + localStorage persistence
-│   ├── ui.js             # router, toast, badges, delegated actions
+│   ├── store.js          # local state + localStorage persistence
+│   ├── ui.js             # router, toast, badges, delegated actions, geolocation
+│   ├── backend.js        # pluggable data layer: demo (local) | firebase (live sync)
 │   ├── otp.js            # pluggable OTP: demo + Firebase (real SMS)
 │   ├── request.js        # emergency request → matching → live tracking
-│   ├── donor.js          # donor signup + dashboard
+│   ├── donor.js          # donor signup + dashboard (live inbox in firebase mode)
 │   └── main.js           # entry point, binds all static controls
 └── README.md
 ```
@@ -34,6 +36,25 @@ python3 -m http.server 8000
 ```
 
 Deploy by uploading the folder to Vercel / GitHub Pages / Netlify as a static site.
+
+## Enabling REAL-TIME SYNC (currently demo/local mode)
+
+Out of the box the app runs on `DemoBackend` — everything stays in the
+browser, requests are simulated. To make requests actually travel between
+phones in real time:
+
+1. In the **Firebase Console**, go to **Build → Firestore Database** →
+   **Create database** → choose **production mode** (we supply strict rules)
+   → pick the closest region (`asia-south1` for India).
+2. Open the **Rules** tab, delete everything, paste the contents of
+   `firestore.rules` from this repo, click **Publish**.
+3. Paste your Firebase web config into `js/config.js` (same keys as for OTP).
+4. Set `backend: 'firebase'` in `js/config.js`. Done — no other code changes.
+
+This uses the **Spark (free) plan — no billing needed**: 50K reads/day and
+20K writes/day, far more than a trial needs. Sign-in is anonymous for the
+trial; when you enable phone OTP later, have users sign in with phone from
+the start so their donor profile stays tied to the right account.
 
 ## Enabling REAL OTP (currently in demo mode)
 

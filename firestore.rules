@@ -1,0 +1,88 @@
+/* ============================================================
+   Raktdaan — Cloud Firestore security rules.
+   Deploy: Firebase Console > Firestore Database > Rules > paste > Publish.
+   Or:  firebase deploy --only firestore:rules  (with Firebase CLI)
+
+   Design:
+   - Everything requires sign-in (anonymous auth is enough for trial).
+   - Public docs NEVER contain phone numbers.
+   - Phone numbers live in `private/contact` subcollections, readable
+     only by the owner + the specific people they were shared with
+     after a mutual acceptance (sharedWith array).
+   ============================================================ */
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    /* ---------- donor profiles (public, no phone numbers) ---------- */
+    match /donors/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+
+      match /private/{doc} {
+        function isOwner() { return signedIn() && request.auth.uid == uid; }
+        function isShared() {
+          return signedIn() && request.auth.uid in resource.data.sharedWith;
+        }
+        allow read: if isOwner() || isShared();
+        allow create: if isOwner();
+        // Owner can edit anything; nobody else can (sharing is
+        // append-only via arrayUnion from the owner's own device).
+        allow update: if isOwner();
+        allow delete: if false;
+      }
+    }
+
+    /* ---------- blood requests ---------- */
+    match /requests/{rid} {
+      allow read: if signedIn();
+
+      // Creating: requesterUid must be your own uid.
+      allow create: if signedIn()
+        && request.resource.data.requesterUid == request.auth.uid;
+
+      // Requester can update anything on their own request.
+      allow update: if signedIn()
+        && resource.data.requesterUid == request.auth.uid;
+
+      // Any other signed-in donor may ONLY touch the `responses` map
+      // (their own accept/decline) — nothing else.
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responses'])
+        && request.resource.data.responses.diff(resource.data.get('responses', {})).affectedKeys().hasOnly([request.auth.uid]);
+
+      allow delete: if false;
+
+      match /private/{doc} {
+        function parent() {
+          return get(/databases/$(db)/documents/requests/$(rid)).data;
+        }
+        function isOwner() {
+          return signedIn() && request.auth.uid == resource.data.ownerUid;
+        }
+        function isShared() {
+          return signedIn() && request.auth.uid in resource.data.sharedWith;
+        }
+        // An accepted donor may add themselves to sharedWith so the
+        // requester's number becomes visible to them (contact exchange).
+        function isAcceptor() {
+          return signedIn()
+            && request.auth.uid in parent().get('responses', {}).keys()
+            && parent().responses[request.auth.uid].status == 'accepted';
+        }
+        allow read: if isOwner() || isShared();
+        allow create: if signedIn() && request.auth.uid == request.resource.data.ownerUid;
+        allow update: if isOwner()
+          || (isAcceptor()
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedWith']));
+        allow delete: if false;
+      }
+    }
+  }
+}

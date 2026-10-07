@@ -1,8 +1,13 @@
 /* ============================================================
    Request — emergency blood-request flow:
    form -> matching donors -> send -> live tracking.
-   PRIVACY: requester phone is never shown to donors until a
-   donor accepts; donor phones are never shown until accepted.
+
+   Works in both modes:
+     demo     : matches local seed donors, responses simulated.
+     firebase : matches real registered donors, responses arrive
+                live via Firestore subscriptions (cross-device).
+   PRIVACY: phone numbers are never in public docs; revealed only
+   after mutual acceptance (see firestore.rules).
    ============================================================ */
 const Request = (() => {
 
@@ -10,8 +15,11 @@ const Request = (() => {
   let needGroup = null;
   let units = 2;
   let urgency = 'Critical';
-  let matches = [];
-  let current = null; // active request being tracked
+  let matches = [];        // donor objects for the current search
+  let donorIndex = {};     // uid -> donor (for tracking render)
+  let current = null;      // active request being tracked
+  let unsubTracking = null;
+  let myPos = null;        // {lat,lng} captured best-effort
 
   /* ---------- form ---------- */
   function buildGroupChips(containerId, onPick) {
@@ -51,7 +59,13 @@ const Request = (() => {
     UI.registerAction('report-donor', () => {
       UI.toast('Reported. Our team will review this profile.');
     });
-    UI.registerAction('confirm-donation', donorId => confirmDonation(donorId));
+    UI.registerAction('confirm-donation', donorUid => confirmDonation(donorUid));
+
+    // Best-effort geolocation so "nearby" is real (never blocks the flow).
+    UI.$('btnNeedBlood').addEventListener('click', () => {
+      myPos = null;
+      UI.getPosition().then(p => { myPos = p; });
+    });
   }
 
   function setUnits(d) {
@@ -59,8 +73,16 @@ const Request = (() => {
     UI.$('unitsVal').textContent = units;
   }
 
+  function donorKey(d) { return d.uid || d.id; }
+
+  function distOf(d) {
+    if (d.dist != null) return d.dist; // demo seeds
+    const km = Backend.distanceKm(myPos, d);
+    return km != null ? km : null;
+  }
+
   /* ---------- matching ---------- */
-  function findDonors() {
+  async function findDonors() {
     const hospital = UI.$('f-hospital').value.trim();
     const patient = UI.$('f-patient').value.trim();
     const phone = UI.$('f-phone').value.trim();
@@ -70,20 +92,34 @@ const Request = (() => {
     if (!Security.isValidName(patient)) return UI.toast('Please enter the patient name.');
     if (!Security.isValidPhone(phone)) return UI.toast('Please enter a valid 10-digit mobile number.');
 
-    const compatible = Store.allDonors().filter(d => BloodData.canDonateTo(d.group, needGroup));
+    UI.toast('🔍 Finding donors…');
+    let all;
+    try {
+      all = await Backend.get().listDonors();
+    } catch (err) {
+      return UI.toast('Could not reach the donor directory: ' + err.message);
+    }
+
+    const compatible = all.filter(d => BloodData.canDonateTo(d.group, needGroup));
     const skipped = compatible.filter(d => !(d.available && Store.isEligible(d))).length;
 
     const rank = { verified: 0, proof: 1, registered: 2 };
     matches = compatible
       .filter(d => d.available && Store.isEligible(d))
-      .sort((a, b) => (rank[a.badge] - rank[b.badge]) || (a.dist - b.dist));
+      .map(d => ({ ...d, _km: distOf(d) }))
+      .sort((a, b) => (rank[a.badge] - rank[b.badge]) ||
+        ((a._km == null ? 1e9 : a._km) - (b._km == null ? 1e9 : b._km)));
+
+    donorIndex = {};
+    matches.forEach(d => { donorIndex[donorKey(d)] = d; });
 
     current = {
-      id: 'r' + Date.now(), needGroup, units, urgency,
+      id: null, needGroup, units, urgency,
       hospital, patient, phone: Security.normalizePhone(phone),
       note: UI.$('f-note').value.trim().slice(0, 300),
-      createdAt: new Date().toISOString(),
-      alerts: []
+      city: '', lat: myPos?.lat ?? null, lng: myPos?.lng ?? null,
+      requesterUid: Backend.get().isDemo ? 'local' : Backend.get().getUid(),
+      status: 'open', responses: {}, createdAt: new Date().toISOString()
     };
 
     UI.$('matchHead').textContent =
@@ -94,15 +130,20 @@ const Request = (() => {
     const list = UI.$('matchList');
     list.innerHTML = '';
     if (!matches.length) {
-      list.innerHTML = '<div class="empty"><div class="big">🔍</div><b>No eligible donors nearby right now.</b><br><span class="muted">We will keep looking — try again in a while.</span></div>';
+      const emptyMode = Backend.get().isDemo
+        ? 'We will keep looking — try again in a while.'
+        : 'No donors registered yet — be the first! Share the app to grow the network.';
+      list.innerHTML = `<div class="empty"><div class="big">🔍</div><b>No eligible donors nearby right now.</b><br><span class="muted">${esc(emptyMode)}</span></div>`;
     }
     matches.forEach(d => {
+      const km = d._km;
+      const distTxt = km == null ? esc(d.city || 'nearby') : `📍 ${km.toFixed(1)} km away`;
       const card = document.createElement('div');
       card.className = 'card';
       card.innerHTML =
         `<div class="donor"><div class="avatar">${esc(d.name[0] || '?')}</div>` +
         `<div class="info"><b>${esc(d.name)}</b> <span style="font-weight:800;color:var(--red)">${esc(d.group)}</span>` +
-        `<div class="meta">📍 ${d.dist.toFixed(1)} km away · 🩸 ${d.donations || 0} donations</div>` +
+        `<div class="meta">${distTxt} · 🩸 ${d.donations || 0} donations</div>` +
         `${UI.badgePill(d.badge)}</div></div>` +
         `<div style="text-align:right;margin-top:8px"><button class="report-link" data-action="report-donor">Report</button></div>`;
       list.appendChild(card);
@@ -119,30 +160,51 @@ const Request = (() => {
   }
 
   /* ---------- send + live tracking ---------- */
-  function sendRequest() {
+  async function sendRequest() {
     if (!current || !matches.length) return;
-    current.alerts = matches.map(d => ({ donorId: d.id, status: 'notified' }));
-    UI.go('req-track');
-    renderTrack();
-    UI.toast(`📢 Request sent to ${matches.length} donors`);
+    const backend = Backend.get();
 
-    // Demo: simulate live donor responses arriving over time.
-    const shuffled = [...matches.map(d => d.id)].sort(() => Math.random() - 0.5);
-    const accepters = shuffled.slice(0, Math.min(2, shuffled.length));
-    const decliner = shuffled.length > 2 ? shuffled[2] : null;
-    accepters.forEach((id, i) => setTimeout(() => setAlert(id, 'accepted'), 6000 + i * 6000));
-    if (decliner) setTimeout(() => setAlert(decliner, 'declined'), 9000);
-  }
+    if (backend.isDemo) {
+      current.id = await backend.createRequest(current);
+      current.responses = {};
+      matches.forEach(d => { current.responses[donorKey(d)] = { status: 'notified' }; });
+      UI.go('req-track');
+      renderTrack();
+      UI.toast(`📢 Request sent to ${matches.length} donors`);
+      backend.simulateResponses(matches, (donorUid, status) => {
+        const r = current.responses[donorUid];
+        if (!r || r.status !== 'notified') return;
+        r.status = status;
+        if (UI.$('s-req-track').classList.contains('active')) renderTrack();
+        if (status === 'accepted') {
+          const d = donorIndex[donorUid];
+          UI.toast(`✅ ${d ? d.name : 'A donor'} accepted your request!`);
+        }
+      });
+      return;
+    }
 
-  function setAlert(donorId, status) {
-    if (!current) return;
-    const a = current.alerts.find(x => x.donorId === donorId);
-    if (!a || a.status !== 'notified') return;
-    a.status = status;
-    if (UI.$('s-req-track').classList.contains('active')) renderTrack();
-    if (status === 'accepted') {
-      const d = Store.getDonor(donorId);
-      UI.toast(`✅ ${d ? d.name : 'A donor'} accepted your request!`);
+    // ---- firebase: real request, real-time tracking ----
+    try {
+      UI.toast('📢 Sending request…');
+      const rid = await backend.createRequest(current);
+      current.id = rid;
+      if (unsubTracking) unsubTracking();
+      unsubTracking = backend.onRequest(rid, snap => {
+        current = { ...current, ...snap, responses: snap.responses || {} };
+        if (UI.$('s-req-track').classList.contains('active')) renderTrack();
+        const acc = Object.entries(current.responses)
+          .filter(([, r]) => r.status === 'accepted' || r.status === 'completed');
+        if (acc.length && !current._announced) {
+          current._announced = true;
+          const d = donorIndex[acc[0][0]];
+          UI.toast(`✅ ${d ? d.name : 'A donor'} accepted your request!`);
+        }
+      });
+      UI.go('req-track');
+      renderTrack();
+    } catch (err) {
+      UI.toast('Send failed: ' + err.message);
     }
   }
 
@@ -153,18 +215,25 @@ const Request = (() => {
     completed: '<span class="badge b-verified">🏁 Completed</span>'
   };
 
+  function statusOf(r, uid) {
+    const resp = (r.responses || {})[uid];
+    return resp ? resp.status : 'notified';
+  }
+
   function renderTrack() {
     const r = current;
     if (!r) return;
+    const backend = Backend.get();
     UI.$('trkSub').textContent =
       `${r.units} unit${r.units !== 1 ? 's' : ''} of ${r.needGroup} · ${r.urgency} · ${r.hospital} · Patient: ${r.patient}`;
-    const accepted = r.alerts.filter(a => a.status === 'accepted' || a.status === 'completed').length;
-    const done = r.alerts.some(a => a.status === 'completed');
+    const entries = Object.entries(r.responses || {});
+    const accepted = entries.filter(([, x]) => x.status === 'accepted' || x.status === 'completed').length;
+    const done = r.status === 'fulfilled' || entries.some(([, x]) => x.status === 'completed');
     UI.$('trkProg').style.width = done ? '100%' : accepted ? '70%' : '40%';
 
     const steps = [
-      { t: 'Request sent', s: `${r.alerts.length} compatible donors alerted`, st: 'done' },
-      { t: 'Donors notified', s: 'Waiting for responses…', st: 'done' },
+      { t: 'Request sent', s: `${entries.length} compatible donors alerted`, st: 'done' },
+      { t: 'Donors notified', s: backend.isDemo ? 'Waiting for responses…' : 'Syncing live across devices…', st: 'done' },
       { t: accepted ? 'Donor accepted' : 'Waiting for acceptance',
         s: accepted ? 'Contact revealed below' : 'Donors see your request (not your number)', st: accepted ? 'done' : 'now' },
       { t: done ? 'Donation completed' : 'Donation pending',
@@ -177,50 +246,92 @@ const Request = (() => {
 
     const box = UI.$('trkAlerts');
     box.innerHTML = '';
-    r.alerts.forEach(a => {
-      const d = Store.getDonor(a.donorId);
+    entries.forEach(([uid, resp]) => {
+      const d = donorIndex[uid];
       if (!d) return;
       const card = document.createElement('div');
       card.className = 'card';
-      let extra = '';
-      if (a.status === 'accepted') {
-        // Contact revealed ONLY after acceptance (privacy by design).
-        extra =
-          `<div class="phone-reveal">📞 Donor accepted — contact revealed:<br><b>${esc(Security.maskPhone(d.phone))}</b>` +
-          `<br><span class="muted" style="font-size:12.5px">Call now &amp; head to ${esc(r.hospital)}</span></div>` +
-          `<div style="height:10px"></div>` +
-          `<button class="btn btn-dark btn-sm" data-action="confirm-donation" data-id="${esc(a.donorId)}">Confirm donation completed ✓</button>`;
-      }
+      const km = d._km;
+      const distTxt = km == null ? esc(d.city || 'nearby') : `${km.toFixed(1)} km`;
+      // data-reveal="phone" slots get filled async in firebase mode
+      const phoneSlot = resp.status === 'accepted'
+        ? `<div class="phone-reveal" data-reveal="phone" data-uid="${esc(uid)}">📞 Donor accepted — fetching contact…</div>`
+        : '';
+      const confirmBtn = resp.status === 'accepted'
+        ? `<div style="height:10px"></div><button class="btn btn-dark btn-sm" data-action="confirm-donation" data-id="${esc(uid)}">Confirm donation completed ✓</button>`
+        : '';
       card.innerHTML =
         `<div class="donor"><div class="avatar">${esc(d.name[0] || '?')}</div>` +
         `<div class="info"><b>${esc(d.name)}</b> <span style="font-weight:800;color:var(--red)">${esc(d.group)}</span>` +
-        `<div class="meta">📍 ${d.dist.toFixed(1)} km · 🩸 ${d.donations || 0} donations</div>` +
-        `${UI.badgePill(d.badge)}</div><div>${STATUS_PILL[a.status]}</div></div>${extra}`;
+        `<div class="meta">📍 ${distTxt} · 🩸 ${d.donations || 0} donations</div>` +
+        `${UI.badgePill(d.badge)}</div><div>${STATUS_PILL[resp.status] || STATUS_PILL.notified}</div></div>` +
+        phoneSlot + confirmBtn;
       box.appendChild(card);
     });
-  }
 
-  function confirmDonation(donorId) {
-    if (!current) return;
-    const a = current.alerts.find(x => x.donorId === donorId);
-    if (!a || a.status !== 'accepted') return;
-    a.status = 'completed';
-    Store.updateDonor(donorId, {
-      donations: (Store.getDonor(donorId).donations || 0) + 1,
-      lastDonation: new Date().toISOString(),
-      badge: 'verified' // proof through action: the strongest verification
-    });
-    if (donorId === 'me') {
-      const me = Store.getMyDonor();
-      me.history = me.history || [];
-      me.history.unshift({ date: new Date().toISOString(), hospital: current.hospital });
-      Store.setMyDonor(me);
+    // Async contact reveal (firebase: read private contact doc — allowed after accept)
+    if (!backend.isDemo) {
+      box.querySelectorAll('[data-reveal="phone"]').forEach(async slot => {
+        try {
+          const contact = await backend.getDonorContact(slot.dataset.uid);
+          const d = donorIndex[slot.dataset.uid] || {};
+          slot.innerHTML = `📞 Donor accepted — contact revealed:<br><b>${esc(Security.maskPhone(contact?.phone || d.phone || ''))}</b>` +
+            `<br><span class="muted" style="font-size:12.5px">Call now &amp; head to ${esc(r.hospital)}</span>`;
+        } catch (e) {
+          slot.innerHTML = `📞 Donor accepted — contact will appear once sync completes.`;
+        }
+      });
+    } else {
+      box.querySelectorAll('[data-reveal="phone"]').forEach(slot => {
+        const d = donorIndex[slot.dataset.uid] || {};
+        slot.innerHTML = `📞 Donor accepted — contact revealed:<br><b>${esc(Security.maskPhone(d.phone || ''))}</b>` +
+          `<br><span class="muted" style="font-size:12.5px">Call now &amp; head to ${esc(r.hospital)}</span>`;
+      });
     }
-    Store.bumpFulfilled();
-    renderTrack();
-    UI.renderHome();
-    UI.toast('❤️ Donation confirmed! Donor is now 🟢 Verified.');
   }
 
-  return { init };
+  async function confirmDonation(donorUid) {
+    if (!current) return;
+    const backend = Backend.get();
+    const resp = (current.responses || {})[donorUid];
+    if (!resp || resp.status !== 'accepted') return;
+
+    if (backend.isDemo) {
+      resp.status = 'completed';
+      const d = donorUid === 'me' ? Store.getMyDonor() : donorIndex[donorUid];
+      Store.updateDonor(donorUid, {
+        donations: ((d && d.donations) || 0) + 1,
+        lastDonation: new Date().toISOString(),
+        badge: 'verified'
+      });
+      if (donorUid === 'me') {
+        const me = Store.getMyDonor();
+        me.history = me.history || [];
+        me.history.unshift({ date: new Date().toISOString(), hospital: current.hospital });
+        Store.setMyDonor(me);
+      }
+      Store.bumpFulfilled();
+      renderTrack();
+      UI.renderHome();
+      UI.toast('❤️ Donation confirmed! Donor is now 🟢 Verified.');
+      return;
+    }
+
+    // firebase: requester marks fulfilled; the donor's own device upgrades
+    // their badge/donations (only they have write access to their profile).
+    try {
+      await backend.markFulfilled(current.id);
+      Store.bumpFulfilled();
+      UI.renderHome();
+      UI.toast('❤️ Marked fulfilled — thank you!');
+    } catch (err) {
+      UI.toast('Could not update: ' + err.message);
+    }
+  }
+
+  function stopTracking() {
+    if (unsubTracking) { unsubTracking(); unsubTracking = null; }
+  }
+
+  return { init, stopTracking };
 })();

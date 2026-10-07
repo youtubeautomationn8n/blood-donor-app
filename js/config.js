@@ -20,6 +20,17 @@ const AppConfig = Object.freeze({
                   free serverless backend). */
   otpProvider: 'demo',
 
+  /* ---- data backend: 'demo' | 'firebase' ----
+     'demo'     : everything stays in this browser (localStorage).
+                  Requests are simulated — nothing leaves the device.
+     'firebase' : real-time sync via Cloud Firestore. Requests sent
+                  from one phone appear on donor phones in seconds.
+                  Uses the FREE Spark plan (no billing needed):
+                  50K reads/day, 20K writes/day.
+                  Requires: Firebase project + Firestore database +
+                  firestore.rules deployed (see README). */
+  backend: 'demo',
+
   firebase: {
     apiKey:     'PASTE_YOUR_API_KEY',
     authDomain: 'YOUR_PROJECT.firebaseapp.com',

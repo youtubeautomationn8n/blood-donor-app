@@ -1,5 +1,11 @@
 /* ============================================================
    Donor — signup (with OTP verification) + donor dashboard.
+
+   Works in both modes:
+     demo     : local profile + simulated incoming requests.
+     firebase : profile synced to Firestore; incoming emergency
+                requests arrive LIVE via subscription — a request
+                sent from another phone appears here in seconds.
    SECURITY: signup step 3 requires a fresh OTP session
    (sessionStorage, 10-min TTL). Phone numbers are masked in
    the UI; full numbers only revealed after mutual acceptance.
@@ -9,6 +15,15 @@ const Donor = (() => {
   const esc = Security.escapeHtml;
   let myGroup = null;
   let resendTimer = null;
+  let myPos = null;
+  let unsubInbox = null;
+  const countedFulfilled = new Set(
+    JSON.parse(localStorage.getItem('rakd_counted') || '[]')
+  );
+  function markCounted(rid) {
+    countedFulfilled.add(rid);
+    try { localStorage.setItem('rakd_counted', JSON.stringify([...countedFulfilled])); } catch (e) {}
+  }
 
   function init() {
     UI.$('btnSendOtp').addEventListener('click', sendOtp);
@@ -17,17 +32,31 @@ const Donor = (() => {
     UI.$('btnFinishSignup').addEventListener('click', finishSignup);
     buildMyGroupChips();
 
-    UI.registerAction('toggle-avail', () => {
+    UI.registerAction('toggle-avail', async () => {
       const me = Store.getMyDonor();
       if (!me) return;
       me.available = !me.available;
       Store.setMyDonor(me);
+      if (!Backend.get().isDemo) {
+        try { await Backend.get().upsertMyDonor({ ...me, lat: me.lat, lng: me.lng }); }
+        catch (e) { UI.toast('Sync failed: ' + e.message); }
+      }
       renderDashboard();
       UI.toast(me.available ? '✅ You will now receive alerts' : '⏸️ Alerts paused');
     });
     UI.registerAction('inbox-accept', id => inboxAct(id, 'accepted'));
     UI.registerAction('inbox-decline', id => inboxAct(id, 'declined'));
     UI.registerAction('inbox-done', id => inboxDone(id));
+
+    // Best-effort geolocation for "nearby" matching (never blocks signup).
+    UI.$('btnBecomeDonor').addEventListener('click', () => {
+      myPos = null;
+      UI.getPosition().then(p => { myPos = p; });
+    });
+    UI.$('btnTrustSignup').addEventListener('click', () => {
+      myPos = null;
+      UI.getPosition().then(p => { myPos = p; });
+    });
   }
 
   function buildMyGroupChips() {
@@ -52,6 +81,7 @@ const Donor = (() => {
 
   function startSignup() {
     if (Store.getMyDonor()) { UI.go('dash'); return; }
+    stopInbox();
     showStep(1);
     UI.go('signup');
   }
@@ -121,7 +151,6 @@ const Donor = (() => {
     try {
       const res = await provider.verify(code);
       if (!res.ok) return UI.toast(res.error || 'Wrong OTP.');
-      // Fresh verified session (10-min TTL) gates step 3.
       try {
         sessionStorage.setItem('rakd_otp_session', JSON.stringify({
           phone: Security.normalizePhone(UI.$('su-phone').value),
@@ -144,7 +173,7 @@ const Donor = (() => {
   }
 
   /* ---------- finish signup ---------- */
-  function finishSignup() {
+  async function finishSignup() {
     if (!otpSessionValid()) {
       showStep(2);
       return UI.toast('Session expired — please verify your number again.');
@@ -159,7 +188,7 @@ const Donor = (() => {
     const lastDon = UI.$('su-lastdon').value;
     if (lastDon && new Date(lastDon) > new Date()) return UI.toast('Last donation date cannot be in the future.');
 
-    Store.setMyDonor({
+    const profile = {
       name: UI.$('su-name').value.trim().slice(0, 60),
       phone: Security.normalizePhone(UI.$('su-phone').value),
       city: UI.$('su-city').value.trim().slice(0, 60),
@@ -169,39 +198,87 @@ const Donor = (() => {
       donations: 0,
       lastDonation: lastDon ? new Date(lastDon).toISOString() : null,
       available: true,
-      history: [],
-      inbox: []
-    });
+      lat: myPos?.lat ?? null, lng: myPos?.lng ?? null,
+      history: [], inbox: []
+    };
+    Store.setMyDonor(profile);
+
+    const backend = Backend.get();
+    if (!backend.isDemo) {
+      try {
+        UI.toast('☁️ Syncing your profile…');
+        await backend.upsertMyDonor(profile);
+      } catch (err) {
+        UI.toast('Sync failed (saved on this device): ' + err.message);
+      }
+    }
 
     UI.go('dash');
     UI.renderHome();
     UI.toast(file ? '🎉 Welcome! You earned the 🟠 badge' : '🎉 Welcome aboard, donor!');
+    subscribeInbox();
 
     // Demo: simulate an incoming emergency request shortly after signup.
-    setTimeout(() => {
-      const me = Store.getMyDonor();
-      if (!me || !Store.isEligible(me)) return;
-      const needable = BloodData.COMPAT[me.group];
-      const need = needable[Math.floor(Math.random() * needable.length)];
-      me.inbox.unshift({
-        id: 'in' + Date.now(), needGroup: need, units: 2,
-        hospital: 'District Hospital, Sehore', patient: 'Emergency patient',
-        phone: '9425011876', urgency: 'Urgent', status: 'pending',
-        at: new Date().toISOString()
-      });
-      Store.setMyDonor(me);
-      if (UI.$('s-dash').classList.contains('active')) renderDashboard();
-      UI.toast('🚨 New emergency request near you!');
-    }, 12000);
+    if (backend.isDemo) {
+      setTimeout(() => {
+        const me = Store.getMyDonor();
+        if (!me || !Store.isEligible(me)) return;
+        const needable = BloodData.COMPAT[me.group];
+        const need = needable[Math.floor(Math.random() * needable.length)];
+        me.inbox.unshift({
+          id: 'in' + Date.now(), needGroup: need, units: 2,
+          hospital: 'District Hospital, Sehore', patient: 'Emergency patient',
+          phone: '9425011876', urgency: 'Urgent', status: 'pending',
+          at: new Date().toISOString()
+        });
+        Store.setMyDonor(me);
+        if (UI.$('s-dash').classList.contains('active')) renderDashboard();
+        UI.toast('🚨 New emergency request near you!');
+      }, 12000);
+    }
   }
 
   /* ---------- dashboard ---------- */
+  function stopInbox() {
+    if (unsubInbox) { unsubInbox(); unsubInbox = null; }
+  }
+
+  function subscribeInbox() {
+    stopInbox();
+    const me = Store.getMyDonor();
+    const backend = Backend.get();
+    if (!me || backend.isDemo) return;
+    unsubInbox = backend.onIncomingRequests(me.group, list => {
+      if (UI.$('s-dash').classList.contains('active')) renderInboxFirebase(list);
+      // Auto-upgrade: requester confirmed a donation I accepted → my device
+      // records it (only I can write my own donor doc).
+      list.forEach(async r => {
+        const myResp = (r.responses || {})[backend.getUid()];
+        if (r.status === 'fulfilled' && myResp && myResp.status === 'accepted' && !countedFulfilled.has(r.id)) {
+          markCounted(r.id);
+          try { await backend.recordMyDonation(); } catch (e) {}
+          const m2 = Store.getMyDonor();
+          if (m2) {
+            m2.donations = (m2.donations || 0) + 1;
+            m2.lastDonation = new Date().toISOString();
+            m2.badge = 'verified';
+            m2.history = m2.history || [];
+            m2.history.unshift({ date: m2.lastDonation, hospital: r.hospital });
+            Store.setMyDonor(m2);
+          }
+          if (UI.$('s-dash').classList.contains('active')) renderDashboard();
+          UI.toast('❤️ A donation was confirmed — you are now 🟢 Verified!');
+        }
+      });
+    });
+  }
+
   function renderDashboard() {
     const d = Store.getMyDonor();
     if (!d) { UI.go('home'); return; }
 
     UI.$('dashAvatar').textContent = (d.name[0] || '?').toUpperCase();
-    UI.$('dashName').textContent = d.name; // textContent: safe
+    UI.$('dashName').textContent = d.name;
     UI.$('dashMeta').textContent = `${d.group} · ${d.city} · ${Security.maskPhone(d.phone)}`;
     UI.$('dashBadge').innerHTML = UI.badgePill(d.badge);
 
@@ -228,40 +305,8 @@ const Donor = (() => {
       `<span class="badge ${b[2] ? 'b-verified' : 'b-registered'}"${b[2] ? '' : ' style="opacity:.55"'}>${b[0]} ${esc(b[1])}</span>`
     ).join('');
 
-    const ib = UI.$('dashInbox');
-    ib.innerHTML = '';
-    if (!Store.isEligible(d) && ne > new Date()) {
-      const n = document.createElement('div');
-      n.className = 'note';
-      n.textContent = `⏳ You donated recently — eligible again on ${BloodData.fmtDate(ne)}. This 90-day rule is what keeps fake frequent donors out.`;
-      ib.appendChild(n);
-    }
-    if (!d.inbox || !d.inbox.length) {
-      if (!ib.children.length) {
-        ib.innerHTML = `<div class="empty"><div class="big">📭</div><b>No requests right now.</b><br><span class="muted">We will alert you the moment someone nearby needs ${esc(d.group)}.</span></div>`;
-      }
-    } else {
-      d.inbox.forEach(q => {
-        const card = document.createElement('div');
-        card.className = 'card alert-card';
-        let action = '';
-        if (q.status === 'pending' && Store.isEligible(d)) {
-          action = `<div class="row2"><button class="btn btn-primary btn-sm" style="margin:0" data-action="inbox-accept" data-id="${esc(q.id)}">Accept ✅</button>` +
-                   `<button class="btn btn-ghost btn-sm" style="margin:0" data-action="inbox-decline" data-id="${esc(q.id)}">Decline</button></div>`;
-        } else if (q.status === 'accepted') {
-          action = `<div class="phone-reveal">📞 Requester contact revealed:<br><b>${esc(Security.maskPhone(q.phone))}</b>` +
-                   `<br><span class="muted" style="font-size:12.5px">${esc(q.patient)} · ${esc(q.hospital)}</span></div>` +
-                   `<div style="height:10px"></div><button class="btn btn-dark btn-sm" data-action="inbox-done" data-id="${esc(q.id)}">Mark donation done ✓</button>`;
-        } else if (q.status === 'declined') {
-          action = '<p class="muted" style="font-size:13px">You declined this request.</p>';
-        } else if (q.status === 'completed') {
-          action = '<p style="font-size:13px;color:var(--green);font-weight:700">🏁 Donation completed — thank you, hero!</p>';
-        }
-        card.innerHTML = `<h3>🚨 ${q.units} unit${q.units !== 1 ? 's' : ''} of <span style="color:var(--red)">${esc(q.needGroup)}</span> needed</h3>` +
-                         `<p class="muted">${esc(q.urgency)} · ${esc(q.hospital)}</p>${action}`;
-        ib.appendChild(card);
-      });
-    }
+    if (Backend.get().isDemo) renderInboxDemo(d);
+    else renderInboxFirebase(null); // async fill via subscription
 
     const hb = UI.$('dashHistory');
     hb.innerHTML = '';
@@ -280,35 +325,169 @@ const Donor = (() => {
         hb.appendChild(c);
       });
     }
+    subscribeInbox();
   }
 
-  function inboxAct(id, status) {
-    const me = Store.getMyDonor();
-    if (!me) return;
-    const q = (me.inbox || []).find(x => x.id === id);
-    if (!q || q.status !== 'pending') return;
-    q.status = status;
-    Store.setMyDonor(me);
-    renderDashboard();
-    UI.toast(status === 'accepted' ? '✅ Accepted! Contact revealed below.' : 'Request declined.');
+  /* ----- demo inbox (local simulated requests) ----- */
+  function renderInboxDemo(d) {
+    const ib = UI.$('dashInbox');
+    ib.innerHTML = '';
+    const ne = Store.nextEligibleDate(d);
+    if (!Store.isEligible(d) && ne > new Date()) {
+      const n = document.createElement('div');
+      n.className = 'note';
+      n.textContent = `⏳ You donated recently — eligible again on ${BloodData.fmtDate(ne)}. This 90-day rule is what keeps fake frequent donors out.`;
+      ib.appendChild(n);
+    }
+    if (!d.inbox || !d.inbox.length) {
+      if (!ib.children.length) {
+        ib.innerHTML = `<div class="empty"><div class="big">📭</div><b>No requests right now.</b><br><span class="muted">We will alert you the moment someone nearby needs ${esc(d.group)}.</span></div>`;
+      }
+      return;
+    }
+    d.inbox.forEach(q => {
+      const card = document.createElement('div');
+      card.className = 'card alert-card';
+      let action = '';
+      if (q.status === 'pending' && Store.isEligible(d)) {
+        action = `<div class="row2"><button class="btn btn-primary btn-sm" style="margin:0" data-action="inbox-accept" data-id="${esc(q.id)}">Accept ✅</button>` +
+                 `<button class="btn btn-ghost btn-sm" style="margin:0" data-action="inbox-decline" data-id="${esc(q.id)}">Decline</button></div>`;
+      } else if (q.status === 'accepted') {
+        action = `<div class="phone-reveal">📞 Requester contact revealed:<br><b>${esc(Security.maskPhone(q.phone))}</b>` +
+                 `<br><span class="muted" style="font-size:12.5px">${esc(q.patient)} · ${esc(q.hospital)}</span></div>` +
+                 `<div style="height:10px"></div><button class="btn btn-dark btn-sm" data-action="inbox-done" data-id="${esc(q.id)}">Mark donation done ✓</button>`;
+      } else if (q.status === 'declined') {
+        action = '<p class="muted" style="font-size:13px">You declined this request.</p>';
+      } else if (q.status === 'completed') {
+        action = '<p style="font-size:13px;color:var(--green);font-weight:700">🏁 Donation completed — thank you, hero!</p>';
+      }
+      card.innerHTML = `<h3>🚨 ${q.units} unit${q.units !== 1 ? 's' : ''} of <span style="color:var(--red)">${esc(q.needGroup)}</span> needed</h3>` +
+                       `<p class="muted">${esc(q.urgency)} · ${esc(q.hospital)}</p>${action}`;
+      ib.appendChild(card);
+    });
   }
 
-  function inboxDone(id) {
-    const me = Store.getMyDonor();
-    if (!me) return;
-    const q = (me.inbox || []).find(x => x.id === id);
-    if (!q || q.status !== 'accepted') return;
-    q.status = 'completed';
-    me.donations = (me.donations || 0) + 1;
-    me.lastDonation = new Date().toISOString();
-    me.badge = 'verified'; // proof through action
-    me.history = me.history || [];
-    me.history.unshift({ date: me.lastDonation, hospital: q.hospital });
-    Store.setMyDonor(me);
-    renderDashboard();
-    UI.renderHome();
-    UI.toast('❤️ Amazing! You are now a 🟢 Verified donor.');
+  /* ----- firebase inbox (live requests from other devices) ----- */
+  let lastFirebaseList = null;
+  function renderInboxFirebase(list) {
+    if (list) lastFirebaseList = list;
+    list = list || lastFirebaseList || [];
+    const d = Store.getMyDonor();
+    const ib = UI.$('dashInbox');
+    if (!d || !ib) return;
+    ib.innerHTML = '';
+    const backend = Backend.get();
+    const uid = backend.getUid();
+    const ne = Store.nextEligibleDate(d);
+    if (!Store.isEligible(d) && ne > new Date()) {
+      const n = document.createElement('div');
+      n.className = 'note';
+      n.textContent = `⏳ You donated recently — eligible again on ${BloodData.fmtDate(ne)}.`;
+      ib.appendChild(n);
+    }
+    if (!list.length) {
+      ib.innerHTML += `<div class="empty"><div class="big">📭</div><b>No requests right now.</b><br><span class="muted">Requests sent from any device appear here live.</span></div>`;
+      return;
+    }
+    list.forEach(r => {
+      const myResp = (r.responses || {})[uid];
+      const myStatus = myResp ? myResp.status : 'pending';
+      const card = document.createElement('div');
+      card.className = 'card alert-card';
+      let action = '';
+      if (myStatus === 'pending' && Store.isEligible(d)) {
+        action = `<div class="row2"><button class="btn btn-primary btn-sm" style="margin:0" data-action="inbox-accept" data-id="${esc(r.id)}">Accept ✅</button>` +
+                 `<button class="btn btn-ghost btn-sm" style="margin:0" data-action="inbox-decline" data-id="${esc(r.id)}">Decline</button></div>`;
+      } else if (myStatus === 'accepted') {
+        action = `<div class="phone-reveal" data-reveal="req-phone" data-rid="${esc(r.id)}">📞 Fetching requester contact…</div>` +
+                 `<div style="height:10px"></div><button class="btn btn-dark btn-sm" data-action="inbox-done" data-id="${esc(r.id)}">Mark donation done ✓</button>`;
+      } else if (myStatus === 'declined') {
+        action = '<p class="muted" style="font-size:13px">You declined this request.</p>';
+      } else if (myStatus === 'completed' || r.status === 'fulfilled') {
+        action = '<p style="font-size:13px;color:var(--green);font-weight:700">🏁 Completed — thank you, hero!</p>';
+      }
+      const when = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+      card.innerHTML = `<h3>🚨 ${r.units} unit${r.units !== 1 ? 's' : ''} of <span style="color:var(--red)">${esc(r.needGroup)}</span> needed</h3>` +
+        `<p class="muted">${esc(r.urgency)} · ${esc(r.hospital)}${when ? ' · ' + esc(when) : ''}${r.note ? '<br>' + esc(r.note) : ''}</p>${action}`;
+      ib.appendChild(card);
+    });
+    // async requester-contact reveal (allowed: donor accepted → sharedWith)
+    ib.querySelectorAll('[data-reveal="req-phone"]').forEach(async slot => {
+      try {
+        const contact = await backend.getRequesterContact(slot.dataset.rid);
+        slot.innerHTML = `📞 Requester contact revealed:<br><b>${esc(Security.maskPhone(contact?.phone || ''))}</b>`;
+      } catch (e) {
+        slot.innerHTML = `📞 Contact syncing… will appear shortly.`;
+      }
+    });
   }
 
-  return { init, startSignup, renderDashboard };
+  async function inboxAct(id, status) {
+    const backend = Backend.get();
+    if (backend.isDemo) {
+      const me = Store.getMyDonor();
+      if (!me) return;
+      const q = (me.inbox || []).find(x => x.id === id);
+      if (!q || q.status !== 'pending') return;
+      q.status = status;
+      Store.setMyDonor(me);
+      renderDashboard();
+      UI.toast(status === 'accepted' ? '✅ Accepted! Contact revealed below.' : 'Request declined.');
+      return;
+    }
+    // firebase: write my response, then exchange contact visibility
+    try {
+      const req = (lastFirebaseList || []).find(r => r.id === id);
+      await backend.respond(id, status);
+      if (status === 'accepted' && req) {
+        await backend.shareContacts(id, backend.getUid(), req.requesterUid);
+      }
+      UI.toast(status === 'accepted' ? '✅ Accepted! Requester notified.' : 'Request declined.');
+    } catch (err) {
+      UI.toast('Could not respond: ' + err.message);
+    }
+  }
+
+  async function inboxDone(id) {
+    const backend = Backend.get();
+    if (backend.isDemo) {
+      const me = Store.getMyDonor();
+      if (!me) return;
+      const q = (me.inbox || []).find(x => x.id === id);
+      if (!q || q.status !== 'accepted') return;
+      q.status = 'completed';
+      me.donations = (me.donations || 0) + 1;
+      me.lastDonation = new Date().toISOString();
+      me.badge = 'verified';
+      me.history = me.history || [];
+      me.history.unshift({ date: me.lastDonation, hospital: q.hospital });
+      Store.setMyDonor(me);
+      renderDashboard();
+      UI.renderHome();
+      UI.toast('❤️ Amazing! You are now a 🟢 Verified donor.');
+      return;
+    }
+    try {
+      await backend.respond(id, 'completed');
+      await backend.recordMyDonation();
+      markCounted(id);
+      const me = Store.getMyDonor();
+      const req = (lastFirebaseList || []).find(r => r.id === id);
+      if (me) {
+        me.donations = (me.donations || 0) + 1;
+        me.lastDonation = new Date().toISOString();
+        me.badge = 'verified';
+        me.history = me.history || [];
+        me.history.unshift({ date: me.lastDonation, hospital: req?.hospital || '—' });
+        Store.setMyDonor(me);
+      }
+      renderDashboard();
+      UI.renderHome();
+      UI.toast('❤️ Amazing! You are now a 🟢 Verified donor.');
+    } catch (err) {
+      UI.toast('Could not update: ' + err.message);
+    }
+  }
+
+  return { init, startSignup, renderDashboard, stopInbox };
 })();

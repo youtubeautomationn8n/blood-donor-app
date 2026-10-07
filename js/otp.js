@@ -34,29 +34,10 @@ const Otp = (() => {
     isDemo: false,
     _confirmation: null,
     _recaptcha: null,
-    _sdkLoaded: false,
-
-    _loadScript(src) {
-      return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) return resolve();
-        const s = document.createElement('script');
-        s.src = src; s.async = true;
-        s.onload = resolve;
-        s.onerror = () => reject(new Error('Failed to load Firebase SDK'));
-        document.head.appendChild(s);
-      });
-    },
 
     async _ensureReady() {
-      if (!this._sdkLoaded) {
-        await this._loadScript('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
-        await this._loadScript('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js');
-        this._sdkLoaded = true;
-      }
-      const cfg = AppConfig.firebase;
-      if (!cfg.apiKey || cfg.apiKey.startsWith('PASTE_'))
-        throw new Error('Firebase config missing — paste your keys into js/config.js (see README).');
-      if (!window.firebase.apps.length) window.firebase.initializeApp(cfg);
+      // Shared bootstrap (also used by the Firestore backend).
+      await Backend.ensureFirebase(AppConfig.backend === 'firebase');
       if (!this._recaptcha) {
         this._recaptcha = new window.firebase.auth.RecaptchaVerifier(
           'recaptcha-container', { size: 'invisible' });
