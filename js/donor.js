@@ -69,7 +69,7 @@ const Donor = (() => {
       try {
         if (!Backend.get().isDemo) await Backend.get().deleteMyAccount();
       } catch (e) {
-        UI.toast('Delete failed: ' + e.message);
+        alert('Delete failed: ' + e.message);
         return;
       }
       stopInbox();
