@@ -29,13 +29,13 @@ const AppConfig = Object.freeze({
                   50K reads/day, 20K writes/day.
                   Requires: Firebase project + Firestore database +
                   firestore.rules deployed (see README). */
-  backend: 'demo',
+  backend: 'firebase',
 
   firebase: {
     apiKey:     'AIzaSyAVp4xHrkyhE5D7IXaXiQjD9iGigfTQ1b4',
     authDomain: 'raktdaan-9a2fb.firebaseapp.com',
     projectId:  'raktdaan-9a2fb',
-    appId:      1:506756099944:web:dfdf72fe2aa61d6727f0dd'
+    appId:      '1:506756099944:web:dfdf72fe2aa61d6727f0dd'
   },
 
   otp: {
