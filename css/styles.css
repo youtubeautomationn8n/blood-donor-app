@@ -130,4 +130,8 @@ textarea{resize:vertical;min-height:70px}
 .prog{height:8px;background:#f1f1f4;border-radius:99px;overflow:hidden;margin-top:8px}
 .prog i{display:block;height:100%;background:linear-gradient(90deg,var(--red),#ff5a5a);border-radius:99px;transition:width .5s}
 .hidden{display:none !important}
+.mode-pill{display:inline-block;font-size:12px;font-weight:700;padding:7px 14px;border-radius:999px;margin:14px 0 2px}
+.mode-demo{background:var(--amber-soft);color:var(--amber)}
+.mode-live{background:var(--green-soft);color:var(--green)}
+.mode-error{background:#fdeaea;color:#b3261e}
 .report-link{font-size:12px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0}

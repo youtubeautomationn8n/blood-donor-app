@@ -43,13 +43,20 @@ Out of the box the app runs on `DemoBackend` — everything stays in the
 browser, requests are simulated. To make requests actually travel between
 phones in real time:
 
-1. In the **Firebase Console**, go to **Build → Firestore Database** →
-   **Create database** → choose **production mode** (we supply strict rules)
-   → pick the closest region (`asia-south1` for India).
-2. Open the **Rules** tab, delete everything, paste the contents of
+1. In the **Firebase Console**, create your project (same one you'll use for OTP later).
+2. **Build → Authentication → Sign-in method** → enable **Anonymous**
+   (the trial uses anonymous sign-in; no billing needed).
+3. **Build → Firestore Database** → **Create database** → choose
+   **production mode** (we supply strict rules) → pick the closest region
+   (`asia-south1` for India).
+4. Open the **Rules** tab, delete everything, paste the contents of
    `firestore.rules` from this repo, click **Publish**.
-3. Paste your Firebase web config into `js/config.js` (same keys as for OTP).
-4. Set `backend: 'firebase'` in `js/config.js`. Done — no other code changes.
+5. **Project settings → Your apps → Add web app** → copy `apiKey`,
+   `authDomain`, `projectId`, `appId` → paste into the `firebase:` block
+   in `js/config.js`.
+6. Set `backend: 'firebase'` in `js/config.js`. Done — no other code changes.
+7. Deploy (Vercel serves HTTPS — Firebase requires it) and add your domain
+   under **Authentication → Settings → Authorized domains**.
 
 This uses the **Spark (free) plan — no billing needed**: 50K reads/day and
 20K writes/day, far more than a trial needs. Sign-in is anonymous for the

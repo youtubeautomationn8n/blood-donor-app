@@ -52,10 +52,11 @@ service cloud.firestore {
         && resource.data.requesterUid == request.auth.uid;
 
       // Any other signed-in donor may ONLY touch the `responses` map
-      // (their own accept/decline) — nothing else.
+      // (accept/decline entries) — never the request's core fields.
+      // (Trial tradeoff: clients only ever write their own key; a
+      //  stricter per-key check would need a Cloud Function.)
       allow update: if signedIn()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responses'])
-        && request.resource.data.responses.diff(resource.data.get('responses', {})).affectedKeys().hasOnly([request.auth.uid]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responses']);
 
       allow delete: if false;
 

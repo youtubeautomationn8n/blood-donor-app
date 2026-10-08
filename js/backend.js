@@ -219,8 +219,9 @@ const Backend = (() => {
   };
 
   async function init() {
-    active = AppConfig.backend === 'firebase' ? FirebaseBackend : DemoBackend;
-    await active.init();
+    const inst = AppConfig.backend === 'firebase' ? FirebaseBackend : DemoBackend;
+    await inst.init(); // throws on misconfiguration — active stays unset
+    active = inst;
     return active;
   }
   function get() {

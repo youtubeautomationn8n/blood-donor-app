@@ -52,6 +52,25 @@ const UI = (() => {
     $('st-donors').textContent = Store.donorCount();
     $('st-verified').textContent = Store.verifiedCount();
     $('st-requests').textContent = Store.getFulfilled();
+    updateModePill();
+  }
+
+  /* Visible sync-status pill so it's always obvious which mode is live. */
+  function updateModePill() {
+    const pill = $('modePill');
+    if (!pill) return;
+    let cls = 'mode-error', label = '⚠️ SYNC OFF — backend not configured';
+    try {
+      if (Backend.get().isDemo) {
+        cls = 'mode-demo';
+        label = '🧪 DEMO MODE — everything stays on this device only';
+      } else {
+        cls = 'mode-live';
+        label = '☁️ LIVE — synced across all devices';
+      }
+    } catch (e) { /* backend failed to init: keep error state */ }
+    pill.className = 'mode-pill ' + cls;
+    pill.textContent = label;
   }
 
   /* ---------- delegated actions ----------
