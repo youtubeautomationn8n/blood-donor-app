@@ -32,10 +32,10 @@ const AppConfig = Object.freeze({
   backend: 'demo',
 
   firebase: {
-    apiKey:     'PASTE_YOUR_API_KEY',
-    authDomain: 'YOUR_PROJECT.firebaseapp.com',
-    projectId:  'YOUR_PROJECT_ID',
-    appId:      'YOUR_APP_ID'
+    apiKey:     'AIzaSyAVp4xHrkyhE5D7IXaXiQjD9iGigfTQ1b4',
+    authDomain: 'raktdaan-9a2fb.firebaseapp.com',
+    projectId:  'raktdaan-9a2fb',
+    appId:      1:506756099944:web:dfdf72fe2aa61d6727f0dd'
   },
 
   otp: {
