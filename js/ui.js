@@ -49,8 +49,23 @@ const UI = (() => {
   }
 
   function renderHome() {
-    $('st-donors').textContent = Store.donorCount();
-    $('st-verified').textContent = Store.verifiedCount();
+    let backend = null;
+    try { backend = Backend.get(); } catch (e) { /* pre-init: fall back to local */ }
+    if (backend && !backend.isDemo) {
+      // LIVE mode: count real donors from the server, not samples.
+      $('st-donors').textContent = '…';
+      $('st-verified').textContent = '…';
+      backend.listDonors().then(list => {
+        $('st-donors').textContent = list.length;
+        $('st-verified').textContent = list.filter(d => d.badge === 'verified').length;
+      }).catch(() => {
+        $('st-donors').textContent = '–';
+        $('st-verified').textContent = '–';
+      });
+    } else {
+      $('st-donors').textContent = Store.donorCount();
+      $('st-verified').textContent = Store.verifiedCount();
+    }
     $('st-requests').textContent = Store.getFulfilled();
     updateModePill();
   }

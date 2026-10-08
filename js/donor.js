@@ -32,17 +32,52 @@ const Donor = (() => {
     UI.$('btnFinishSignup').addEventListener('click', finishSignup);
     buildMyGroupChips();
 
+    let toggling = false;
     UI.registerAction('toggle-avail', async () => {
+      if (toggling) return;
       const me = Store.getMyDonor();
       if (!me) return;
-      me.available = !me.available;
-      Store.setMyDonor(me);
+      toggling = true;
+      const prev = me.available;
+      me.available = !prev;
+      // In LIVE mode, sync FIRST; only keep the change if the server accepted it,
+      // so the toggle never lies about your real availability.
       if (!Backend.get().isDemo) {
-        try { await Backend.get().upsertMyDonor({ ...me, lat: me.lat, lng: me.lng }); }
-        catch (e) { UI.toast('Sync failed: ' + e.message); }
+        try { await Backend.get().upsertMyDonor(me); }
+        catch (e) {
+          me.available = prev;
+          toggling = false;
+          renderDashboard();
+          UI.toast('Could not sync — still ' + (prev ? 'available' : 'paused') + '. ' + e.message);
+          return;
+        }
       }
+      Store.setMyDonor(me);
+      toggling = false;
       renderDashboard();
-      UI.toast(me.available ? '✅ You will now receive alerts' : '⏸️ Alerts paused');
+      UI.toast(me.available ? '✅ Available — you will receive alerts' : '⏸️ Paused — you will not receive alerts');
+    });
+    UI.registerAction('delete-account', async () => {
+      const me = Store.getMyDonor();
+      if (!me) return;
+      const ok = confirm(
+        'Delete your donor account permanently?\n\n' +
+        'Your profile will be removed and you will stop receiving requests. ' +
+        'This cannot be undone.'
+      );
+      if (!ok) return;
+      try {
+        if (!Backend.get().isDemo) await Backend.get().deleteMyAccount();
+      } catch (e) {
+        UI.toast('Delete failed: ' + e.message);
+        return;
+      }
+      stopInbox();
+      try { Request.stopTracking(); } catch (e) {}
+      Store.clearMyDonor();
+      UI.go('home');
+      UI.renderHome();
+      UI.toast('Account deleted.');
     });
     UI.registerAction('inbox-accept', id => inboxAct(id, 'accepted'));
     UI.registerAction('inbox-decline', id => inboxAct(id, 'declined'));

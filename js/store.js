@@ -41,6 +41,10 @@ const Store = (() => {
 
   function setMyDonor(d)  { myDonor = d; saveMe(); }
   function getMyDonor()   { return myDonor; }
+  function clearMyDonor() {
+    myDonor = null;
+    try { localStorage.removeItem(KEYS.myDonor); } catch (e) {}
+  }
 
   function updateDonor(id, patch) {
     if (id === 'me' && myDonor) { Object.assign(myDonor, patch); saveMe(); return myDonor; }
@@ -66,10 +70,15 @@ const Store = (() => {
   }
   function getFulfilled() { return fulfilled; }
   function verifiedCount() {
-    return donors.filter(d => d.badge === 'verified').length +
+    const seedV = (window.AppConfig && AppConfig.useSeedDonors)
+      ? donors.filter(d => d.badge === 'verified').length : 0;
+    return seedV +
       (myDonor && myDonor.badge === 'verified' ? 1 : 0);
   }
-  function donorCount() { return donors.length + (myDonor ? 1 : 0); }
+  function donorCount() {
+    const seeds = (window.AppConfig && AppConfig.useSeedDonors) ? donors.length : 0;
+    return seeds + (myDonor ? 1 : 0);
+  }
 
   /* ---- eligibility: 90-day gap between whole-blood donations ----
      This is the rule that makes "fake frequent donors" impossible. */
@@ -86,7 +95,7 @@ const Store = (() => {
 
   return {
     allDonors, getDonor, updateDonor,
-    getMyDonor, setMyDonor,
+    getMyDonor, setMyDonor, clearMyDonor,
     bumpFulfilled, getFulfilled, verifiedCount, donorCount,
     nextEligibleDate, isEligible
   };

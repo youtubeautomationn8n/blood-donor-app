@@ -67,7 +67,11 @@ const Backend = (() => {
     name: 'demo',
     isDemo: true,
     async init() {},
-    async listDonors() { return Store.allDonors(); },
+    async listDonors() {
+      if (AppConfig.useSeedDonors) return Store.allDonors();
+      const me = Store.getMyDonor();
+      return me ? [{ ...me, id: 'me', dist: 0.3 }] : [];
+    },
     async upsertMyDonor() { /* Store already holds it */ },
     async createRequest(req) { req.id = 'r' + Date.now(); return req.id; },
 
@@ -215,6 +219,22 @@ const Backend = (() => {
         badge: 'verified', // proof through action
         updatedAt: fv.serverTimestamp()
       });
+    },
+
+    /* Delete account: removes donor profile, private contact,
+       and the user's own still-open requests. Completed history stays. */
+    async deleteMyAccount() {
+      const uid = this.uid;
+      const base = this.db.collection('donors').doc(uid);
+      const openReqs = await this.db.collection('requests')
+        .where('requesterUid', '==', uid)
+        .where('status', '==', 'open')
+        .get();
+      const batch = this.db.batch();
+      openReqs.forEach(doc => batch.delete(doc.ref));
+      batch.delete(base.collection('private').doc('contact'));
+      batch.delete(base);
+      await batch.commit();
     }
   };
 

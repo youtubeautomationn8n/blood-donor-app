@@ -47,6 +47,8 @@ span.hbtn{border:none;background:none;cursor:default}
 .btn-primary{background:linear-gradient(135deg,var(--red),var(--red-dark));color:#fff;box-shadow:0 10px 24px rgba(217,4,41,.32);margin-bottom:12px}
 .btn-dark{background:var(--ink);color:#fff;margin-bottom:12px}
 .btn-ghost{background:#fff;border:1.5px solid var(--line);color:var(--ink);margin-bottom:12px}
+.btn-danger{background:#fff;border:1.5px solid #f3b4bd;color:#c1121f;margin-bottom:0}
+.btn-danger:active{background:#fff0f1}
 .btn-sm{width:auto;padding:10px 18px;font-size:14px;border-radius:12px;display:inline-flex}
 .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 .row2{display:flex;gap:10px}.row2 .btn{flex:1}

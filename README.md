@@ -136,6 +136,20 @@ What still needs a **backend** before real launch:
 4. 90-day donation-gap rule auto-excludes impossible claims
 5. Contact privacy — numbers revealed only on acceptance
 
+## Account & data controls
+
+- **Delete my account** — donor dashboard → ⚠️ Account section →
+  "Delete my account". Removes the donor profile, the private contact record,
+  and the user's own still-open requests from Firestore (completed donation
+  history stays). Asks for confirmation first. The Firestore rules in
+  `firestore.rules` already permit owners to delete their own documents —
+  **re-publish the rules** in the Firebase console after pulling this update.
+- **Sample data** — `js/config.js` → `useSeedDonors`. `false` (default) means
+  only real registered donors ever appear, in both demo and live mode. Set to
+  `true` only when showcasing the demo.
+- **Availability toggle** — syncs to the server first; if the write fails the
+  toggle flips back and tells you, so it never shows a state that isn't real.
+
 ## License
 
 Free for community / non-commercial use. If you deploy it for your

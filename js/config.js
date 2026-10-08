@@ -1,5 +1,5 @@
 /* ============================================================
-   AppConfig — central configuration for Raktdaan.
+   AppConfig â central configuration for Raktdaan.
    Change ONE value here to switch OTP providers.
    ============================================================ */
 const AppConfig = Object.freeze({
@@ -15,14 +15,14 @@ const AppConfig = Object.freeze({
                      Authorized domains in the Firebase console.
                   NOTE (verified Oct 2026): since Sep 2024 Firebase phone
                   auth requires the Blaze plan (billing account attached).
-                  First 10 SMS/day are free; India SMS ≈ $0.01–0.06 each.
+                  First 10 SMS/day are free; India SMS â $0.01â0.06 each.
                   See README.md for a free alternative (SMS gateway +
                   free serverless backend). */
   otpProvider: 'demo',
 
   /* ---- data backend: 'demo' | 'firebase' ----
      'demo'     : everything stays in this browser (localStorage).
-                  Requests are simulated — nothing leaves the device.
+                  Requests are simulated â nothing leaves the device.
      'firebase' : real-time sync via Cloud Firestore. Requests sent
                   from one phone appear on donor phones in seconds.
                   Uses the FREE Spark plan (no billing needed):
@@ -30,6 +30,11 @@ const AppConfig = Object.freeze({
                   Requires: Firebase project + Firestore database +
                   firestore.rules deployed (see README). */
   backend: 'firebase',
+
+  /* ---- Sample data: true | false ----
+     true  : demo mode shows built-in sample donors (for showcasing).
+     false : only real registered donors appear (production default). */
+  useSeedDonors: false,
 
   firebase: {
     apiKey:     'AIzaSyAVp4xHrkyhE5D7IXaXiQjD9iGigfTQ1b4',

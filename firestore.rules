@@ -23,7 +23,8 @@ service cloud.firestore {
     match /donors/{uid} {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid;
-      allow delete: if false;
+      // Owner may delete their own account.
+      allow delete: if signedIn() && request.auth.uid == uid;
 
       match /private/{doc} {
         function isOwner() { return signedIn() && request.auth.uid == uid; }
@@ -35,7 +36,7 @@ service cloud.firestore {
         // Owner can edit anything; nobody else can (sharing is
         // append-only via arrayUnion from the owner's own device).
         allow update: if isOwner();
-        allow delete: if false;
+        allow delete: if isOwner();
       }
     }
 
@@ -58,7 +59,9 @@ service cloud.firestore {
       allow update: if signedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responses']);
 
-      allow delete: if false;
+      // The requester may delete their own request (e.g. via Delete account).
+      allow delete: if signedIn()
+        && resource.data.requesterUid == request.auth.uid;
 
       match /private/{doc} {
         function parent() {
